@@ -1,13 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 void input_loop() {
-  char line [100];
+  char line [103];
   char* tokens[50];
   while(1) {
     printf("> ");
-    fgets(line, 100, stdin);
-    printf("%l", strlen(line));
+    fgets(line, 103, stdin);
+    printf("%lu\n", strlen(line));
+    if(strlen(line) > 101) {
+      break;
+    }
     if(strcmp(line, "exit\n") == 0) {
       break;
     }
