@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h> 
 
+char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-./_ ";
+
 void input_loop() {
   char line[103];
   char* tokens[51];
@@ -18,6 +20,15 @@ void input_loop() {
       break;
     }
     //printf("%s", line);
+
+
+    /// check that the line only has legal characters
+    if (strspn(line, charset) != strlen(line) - 1) {
+      // ERROR MESSAGE GOES HERE
+      break;
+    }
+
+    /// split the line into tokens
     char* token = strtok(line, " ");
     tcount = 0;
     while (token != NULL) {
