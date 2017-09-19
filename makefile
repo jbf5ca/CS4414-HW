@@ -1,2 +1,2 @@
 msh: msh.c
-	gcc -o msh msh.c
+	gcc -Wall -o msh msh.c
