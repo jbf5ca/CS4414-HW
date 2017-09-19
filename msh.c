@@ -10,8 +10,32 @@ int illegal_chars(char compstr[], char charset[]) {
   return ( strspn(compstr, charset) != strlen(compstr) - 1 );
 }
 
-void cmd_exec(char* tokengoups[], int cmd_count) {
+void cmd_exec(char* argv[], int cmd_count, int tcount) {
+  if (cmd_count == 1) {
+    //int i;
+    //char* argv[tcount];
+    //for (i = 0; i < tcount; i++) {
+    //argv[i] = tokens[i];
+    //}
 
+    pid_t pid = fork();
+    int status;
+    //printf("%i", pid);
+    if (pid == -1) {
+      // ERROR MESSAGE
+      //printf("error creating child process");
+      exit(EXIT_FAILURE);
+    }
+    if (pid == 0) {  /// child process
+      execve(argv[0], argv);
+      _Exit(EXIT_FAILURE);
+    } else { /// parent
+      waitpid(pid, &status, 0);
+      printf("%s exited with status %d\n", argv[0], WEXITSTATUS(status));
+    }
+  } else {
+    printf("piping not yet implemented\n");
+  }
 }
 
 void input_loop() {
@@ -29,7 +53,6 @@ void input_loop() {
 
     printf("> ");
     fgets(line, 103, stdin);
-    //printf("%lu\n", strlen(line));
     if (strlen(line) > 101) {
       // ERROR MESSAGE GOES HERE
       continue;
@@ -126,29 +149,30 @@ void input_loop() {
     if (err) {
       continue;
     }
-    printf ("commands: %i\n", groupcount);
 
+    /// remove trailing newline from last token
+    tokens[tcount-1][strcspn(tokens[tcount-1], "\n")] = 0;
+    
+    /// strip token array to proper length
+    //char* argv[tcount];
+    for (i = tcount; i < 51; i++) {
+      //argv[i] = tokens[i];
+      tokens[i] = '\0';
+    }
 
-    /// split the line into token groups separated by pipes
-    /*groupcount = 0;
-    char* token = strtok(line, pipe);
-    while (token != NULL) {
-      tokengroups[groupcount] = token;
-      token = strtok(NULL, pipe);
-      groupcount++;
-      }*/
-   
-    //printf("groupcount: %i\n", groupcount);
-    //for (i = 0; i < groupcount; i++) {
-    //  printf("%i, %s\n", i, tokengroups[i]);
+    //printf("commands: %i\n", groupcount);
+    //printf("tokens: ");
+    //for (i = 0; i < tcount; i++) {
+    //printf("[%s] ", tokens[i]);
     //}
-
+    //printf("\n");
     /// now send the token groups to the command handler
-    //cmd_exec(tokengroups, groupcount);
+    cmd_exec(tokens, groupcount, tcount);
   }
 }
 
 int main(int argc, char* argv[]) {
+  setenv("TERM", "msh", 0);
   input_loop();
   return 0;
 }
