@@ -17,21 +17,123 @@ char linecset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345678
 char wordcset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-./_";
 char controls[] = "<>|";
 void pipe_exec(char commands[100][100][100], int groupcount, int in_redir, int out_redir, char infile[], char outfile[], int tcount) {
-  int i,j;
-  if (in_redir) { printf("{%s} ", infile); }
-  for (i = 0; i < groupcount; i++) {
-    j = 0;
-    while (strlen(commands[i][j]) > 0){// != NULL) {
-      printf("[%s]", commands[i][j]);
-      j++;
-    }
-    if (i < groupcount - 1) { printf("| "); }
+  int i, j, nextin = 0, filedesc[2];
+  char rin[100], rout[100];
+  pid_t pid;
+  pid_t pids[50];
+  char* cmds[50];
+  int status;
+  int statuses[50];
+
+  /// prepare to redirect input to first command if necessary, otherwise it should remain 0 for stdin
+  if (in_redir) {
+    getcwd(rin, sizeof(rin));
+    strcat(rin, "/");
+    strcat(rin, infile);
+    
+    nextin = open(rin, O_RDONLY);
   }
-  if (out_redir) { printf("{%s}\n", outfile); }
+
+  for (i = 0; i < groupcount - 1; i++) {
+    //char** argv = (char **)malloc(sizeof(commands[0]));
+    char* argv[100];
+    for (j = 0; j < 100; j++) {
+      argv[j] = (char *)malloc(strlen(commands[i][j])+1);
+      strcpy(argv[j], commands[i][j]);
+    }
+    //memcpy(&argv, &commands[i], sizeof(commands[i]));
+    //while(j < 100 && strlen(commands[i][j]) > 0) {
+    //printf("%s\n", commands[i][j]);
+    //strcpy(argv[j], commands[i][j]);
+    //j++;
+    //}
+    /// create the pipes 
+    pipe(filedesc);
+
+    pid = fork();
+    if (pid == -1) {
+      perror("fork");
+      exit(EXIT_FAILURE);
+    }
+
+    if (pid == 0) { /// child process
+      /// save the pid and cmd string for exit status output
+      pids[i] = pid;
+      //strcpy(cmds[0], commands[i][0]);
+      strcpy(cmds[0], argv[0]);
+
+      /// redirect input if necessary
+      if (nextin != 0) {
+	dup2(nextin, 0);
+	close(nextin);
+      }
+
+      /// redirect output, always going to the pipe for these threads
+      dup2(filedesc[1], 1);
+      close(filedesc[1]);
+
+      /// exec the command
+      //execve(commands[i][0], commands[i], NULL);
+      printf("exec %s", argv[0]);
+      execve(argv[0], argv, NULL);
+      _Exit(EXIT_FAILURE);
+    } else {
+      /// save exit code
+      waitpid(pid, &status, 0);
+      statuses[i] = status;
+
+      close(filedesc[1]);
+      nextin = filedesc[0];
+    }
+    for (j = 0; j < 100; j++) {
+      free(argv[j]);
+    }
+  } // forloop
+
+  /// run the last command
+  char* argv[100];
+  for (j = 0; j < 100; j++) {
+    //printf("%s : ", commands[i][j]);
+    argv[j] = (char *)malloc(strlen(commands[i][j])+1);
+    strcpy(argv[j], commands[i][j]);
+    //printf("%s\n", argv[j]);
+  }
+
+  if (nextin != 0) {
+    dup2(nextin, 0);
+    close(nextin);
+  }
+  pid = fork();
+  if (pid == -1) {
+    perror("fork");
+    exit(EXIT_FAILURE);
+  }
+  if (pid == 0) {
+    pids[i] = pid;
+    //strcpy(cmds[0], commands[i][0]);
+    strcpy(cmds[0], argv[0]);
+
+    printf("bout to exec %s\n", argv[0]);
+    //execve(commands[i][0], commands[i], NULL);
+    execve(argv[0], argv, NULL);
+    _Exit(EXIT_FAILURE);
+  } else {
+    for (j = 0; j < 100; j++) {
+      free(argv[j]);
+    }
+    waitpid(pid, &status, 0);
+    statuses[i] = status;
+  }
+
+  /// print out command exit codes
+  for (i = 0; i < groupcount; i++) {
+    printf("%s exited with exit code %d\n", cmds[i], WEXITSTATUS(statuses[i]));
+  }
 }
 void io_redir(char* argv[], int in_redir, int out_redir, char infile[], char outfile[], int tcount) {
   int fd;
   char rin[100], rout[100], tmp[100];
+
   /// if the command is a relative path, prepend cwd to make it absolute
   if (argv[0][0] != '/') {
     strcpy(tmp, argv[0]);
@@ -39,6 +141,8 @@ void io_redir(char* argv[], int in_redir, int out_redir, char infile[], char out
     strcat(argv[0], "/");
     strcat(argv[0], tmp);
   }
+
+  /// convert all input/output filenames to absolute paths
   if (in_redir) {
     getcwd(rin, sizeof(rin));
     strcat(rin, "/");
@@ -105,7 +209,7 @@ void input_loop() {
     //char* tokengroups[50];
     char* tokens[51];
     //char tokens[51][100];
-    int i, j, groupcount, tcount, err;
+    int i, groupcount, tcount, err;
     int in_redir = 0, out_redir = 0;
     char infile[100];
     char outfile[100];
@@ -231,8 +335,8 @@ void input_loop() {
 	  //tokens[tcount - 2] = '\0';
 	  //tcount -= 2;
 	  //break;
-	  tokens[i] = '\0';
-	  tokens[i+1] = '\0';
+	  //tokens[i][0] = '\0';
+	  //tokens[i+1][0] = '\0';
 	  break;
 	}
       }
@@ -249,32 +353,49 @@ void input_loop() {
 	  //tokens[tcount - 1] = '\0';
 	  //tokens[tcount - 2] = '\0';
 	  //tcount -= 2;
-	  tokens[i] = '\0';
-	  tokens[i+1] = '\0';
+	  //tokens[i][0] = '\0';
+	  //tokens[i+1][0] = '\0';
 	  break;
 	}
       }
     }
+    //printf("test1\n");
+    char* argv[51];
+    int x = 0;
+    for (i = 0; i < tcount; i++) {
+      if (tokens[i][0] == '>' || tokens[i][0] == '<') {
+	i++;
+      }
+      else {
+	//strcpy(argv[x], tokens[i]);
+	//printf(".\n");
+	argv[x] = tokens[i];
+	x++;
+      }
+    }
+    //printf("test2\n");
+    if (in_redir) { tcount -= 2; }
+    if (out_redir) { tcount -=2; }
 
     if (groupcount > 1) {
       char commands[100][100][100];
       int cmdcount = 0;
       int tok = 0, wordcount = 0, finish = 0;
-      for (i = 0; i < tcount; i++) {
-	printf("%s ", tokens[i]);
-      }
-      while (!finish && tokens[tok] != NULL) {
+      //for (i = 0; i < tcount; i++) {
+      //printf("%s ", argv[i]);
+      //}
+      while (!finish && argv[tok] != NULL) {
 	char cmd[100][100];
 	wordcount = 0;
-	while (tok < tcount && strcmp(tokens[tok], "|") != 0) {
-	  if (tokens[tok] == NULL) {
+	while (tok < tcount && strcmp(argv[tok], "|") != 0) {
+	  if (argv[tok] == NULL) {
 	    finish = 1;
 	    //wordcount++;
 	    //tok++;
 	    continue;
 	  }
-	  strcpy(cmd[wordcount], tokens[tok]);
-	  printf("copied %s\n", tokens[tok]);
+	  strcpy(cmd[wordcount], argv[tok]);
+	  //printf("copied %s\n", argv[tok]);
 	  tok++;
 	  wordcount++;
 	}
@@ -282,9 +403,9 @@ void input_loop() {
 	tok++;
       
         /// copy cmd, string-by-string into commands[cmdcount]
-	printf("got here, wc = %i\n", wordcount);
+	//printf("got here, wc = %i\n", wordcount);
 	for (i = 0; i < wordcount; i++) {
-	  printf("strcpy, i = %i, cmd[i] = %s\n", i, cmd[i]);
+	  //printf("strcpy, i = %i, cmd[i] = %s\n", i, cmd[i]);
 	  strcpy(commands[cmdcount][i], cmd[i]);
 	}
 	//commands[cmdcount][wordcount] = "\0";
@@ -298,12 +419,12 @@ void input_loop() {
 
     /// identify and execute commands with io redirection
     else if (in_redir || out_redir) {
-      io_redir(tokens, in_redir, out_redir, infile, outfile, tcount);
+      io_redir(argv, in_redir, out_redir, infile, outfile, tcount);
       continue;
     }
 
     /// otherwise: single command with no io redirection, execute normally
-    cmd_exec(tokens, groupcount, tcount);
+    cmd_exec(argv, groupcount, tcount);
   }
 }
 
